@@ -71,7 +71,7 @@ The coordinator auto-selects relevant sources based on omic type. User can overr
 | bulkGenomicseq | yes | no | yes | yes | no |
 | ATACseq | yes | no | no | no | yes* |
 | ChIPseq | yes | no | no | no | no |
-| CRISPR | no | no | no | yes | no |
+| CRISPR | yes | no | no | yes | no |
 
 *SCP only for single-cell ATAC.
 
@@ -110,7 +110,7 @@ Takes one or more accession IDs from a previous search. Looks up source from sea
 6. Presents tiered output:
    - **Top 10**: Full summary cards with all 5 info categories
    - **Remaining matches**: One-line list (accession, title, source, sample count)
-7. Caches results to `results/search_cache/` for the download phase
+7. Caches results to `results/search_cache/` for the download phase. Cache filename encodes all query parameters as a hash: `{date}_{omic}_{hash_of_all_params}.json` to avoid collisions between searches with different filters
 
 ## Download Workflow
 
@@ -215,7 +215,7 @@ dataseek/
 | CCLE | DepMap Portal REST API | No | `requests`, `pandas` |
 | Xena UCSC | Xena REST API | No | `xenaPython`, `requests` |
 | DepMap | DepMap Portal REST API + bulk downloads | No | `requests`, `pandas` |
-| SCP | Single Cell Portal REST API v1 | Bearer token (free registration) | `requests` |
+| SCP | Single Cell Portal REST API v1 | Bearer token (free registration, stored in env var `SCP_TOKEN`) | `requests` |
 
 ### Conda Environment (`dataseek`)
 
@@ -247,7 +247,7 @@ Scripts are standalone, invoked by agents via subprocess.
 
 ## Pipeline Config Generation
 
-The download agent infers the target pipeline from omic type and generates starter configs:
+The download agent infers the target pipeline from omic type and generates starter configs. Pipeline directories are expected as siblings to dataseek (i.e., `../scRNAseq/`, `../bulkRNAseq/`, etc. relative to the dataseek project root):
 
 | Omic Type | Target Pipeline Dir | Config Generated |
 |-----------|-------------------|-----------------|
