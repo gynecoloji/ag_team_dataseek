@@ -1,0 +1,15 @@
+name: dataseek
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python>=3.10
+  - biopython
+  - requests
+  - pandas
+  - pip
+  - pip:
+    - xenaPython
+  - pytest
+  - pytest-mock
+  - responses
