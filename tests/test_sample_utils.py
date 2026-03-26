@@ -259,6 +259,26 @@ class TestSummarizeSamples:
         assert summary.startswith("Samples (")
         assert "|" in summary
 
+    def test_summary_shows_shown_samples_when_capped(self):
+        """When total_samples > shown_samples, the summary count reflects shown_samples."""
+        rows = _make_rows(5)
+        normalized = normalize_sample_table(rows, "GEO")
+        cols = STANDARD_COLUMNS + SOURCE_EXTRA_COLUMNS.get("GEO", [])
+        csv_rows = [[r[c] for c in cols] for r in normalized]
+        summary_dict = _build_summary_dict(normalized)
+        table_data = {
+            "total_samples": 1000,
+            "shown_samples": 5,
+            "capped": True,
+            "columns": cols,
+            "rows": csv_rows,
+            "summary": summary_dict,
+        }
+        summary = summarize_samples(table_data)
+        # The summary line should report the number of shown rows (5), not the total (1000)
+        assert "Samples (5)" in summary
+        assert "1000" not in summary
+
 
 # ---------------------------------------------------------------------------
 # TestBuildSampleTable

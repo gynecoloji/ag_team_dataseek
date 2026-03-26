@@ -2,7 +2,6 @@
 
 import csv
 import os
-from collections import Counter
 
 # ---------------------------------------------------------------------------
 # Schema constants
@@ -96,7 +95,7 @@ def write_sample_csv(accession: str, table_data: dict, output_dir: str) -> str:
         output_dir: Directory to write the CSV into (created if missing).
 
     Returns:
-        Absolute path to the written CSV file.
+        Path to the written CSV file.
     """
     os.makedirs(output_dir, exist_ok=True)
     filepath = os.path.join(output_dir, f"{accession}_samples.csv")
@@ -166,7 +165,7 @@ def build_sample_table(rows: list[dict], source: str, total_count: int | None = 
 
     raw_total = total_count if total_count is not None else len(rows)
     shown = len(normalized)
-    capped = raw_total > SAMPLE_CAP or len(rows) > SAMPLE_CAP
+    capped = shown < raw_total
 
     summary = _build_summary_dict(normalized)
 
