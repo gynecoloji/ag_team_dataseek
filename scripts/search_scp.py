@@ -108,7 +108,9 @@ def search_scp(omic, organism="human", disease=None, tissue=None, max_results=50
         record = parse_scp_study(study, omic)
         accession = record.get("accession", "")
         if accession:
-            record["sample_table"] = fetch_scp_samples(accession)
+            scp_sample_table = fetch_scp_samples(accession)
+            if scp_sample_table:
+                record["sample_table"] = scp_sample_table
         results.append(record)
     logger.info(f"Found {len(results)} SCP studies")
     return results

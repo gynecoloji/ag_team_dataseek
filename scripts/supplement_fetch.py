@@ -100,6 +100,10 @@ def fetch_pmc_supplement_list(pmcid: str) -> list[dict]:
             if not href:
                 continue
             filename = href.split("/")[-1]
+            ext = os.path.splitext(filename)[1].lower()
+            # Only count tabular files toward the cap
+            if ext not in TABULAR_EXTENSIONS:
+                continue
             supplements.append({"url": href, "filename": filename})
             if len(supplements) >= MAX_SUPPLEMENT_FILES:
                 break

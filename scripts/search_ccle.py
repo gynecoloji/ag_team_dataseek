@@ -147,7 +147,8 @@ def search_ccle(omic, disease=None, max_results=50):
             result = parse_ccle_dataset(entry, omic)
             if disease and disease.lower() not in result["title"].lower():
                 continue
-            result["sample_table"] = sample_table
+            if sample_table:
+                result["sample_table"] = sample_table
             results.append(result)
     logger.info(f"Found {len(results)} CCLE datasets")
     return results[:max_results]

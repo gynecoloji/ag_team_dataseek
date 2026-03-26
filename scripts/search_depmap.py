@@ -137,7 +137,8 @@ def search_depmap(omic, disease=None, max_results=50):
         entry_tags = entry.get("tagsUrl", "")
         if any(tag in entry_tags for tag in tags):
             result = parse_depmap_dataset(entry, omic)
-            result["sample_table"] = sample_table
+            if sample_table:
+                result["sample_table"] = sample_table
             results.append(result)
     logger.info(f"Found {len(results)} DepMap datasets")
     return results[:max_results]

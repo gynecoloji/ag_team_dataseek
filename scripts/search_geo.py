@@ -138,8 +138,9 @@ def _map_characteristic(key: str, value: str):
             if key_lower == kw:
                 return (schema_col, value.strip())
 
-    # Pass 2: substring containment
-    for schema_col, keywords in CHARACTERISTIC_KEY_MAP.items():
+    # Pass 2: substring containment — process entries with longer keywords first
+    # so that e.g. "stage" (5 chars) is checked before "age" (3 chars).
+    for schema_col, keywords in sorted(CHARACTERISTIC_KEY_MAP.items(), key=lambda item: max(len(kw) for kw in item[1]), reverse=True):
         for kw in keywords:
             if kw in key_lower:
                 return (schema_col, value.strip())
@@ -218,7 +219,7 @@ def fetch_geo_samples(accession: str, paper: dict | None = None) -> dict | None:
                     sid = enr.get("sample_id")
                     if sid and sid in id_to_row:
                         for k, v in enr.items():
-                            if k != "sample_id" and k not in id_to_row[sid]:
+                            if k != "sample_id" and (k not in id_to_row[sid] or id_to_row[sid].get(k) == "N/A"):
                                 id_to_row[sid][k] = v
         except Exception as exc:
             logger.warning("Supplementary enrichment failed for %s: %s", accession, exc)
@@ -249,7 +250,8 @@ def search_geo(omic, organism="human", disease=None, tissue=None, max_results=50
         if accession and accession.startswith("GSE"):
             record = parse_geo_record(doc, omic)
             sample_table = fetch_geo_samples(accession, paper=record.get("paper"))
-            record["sample_table"] = sample_table
+            if sample_table:
+                record["sample_table"] = sample_table
             results.append(record)
     logger.info(f"Parsed {len(results)} GEO series records")
     return results
