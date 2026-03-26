@@ -45,7 +45,17 @@ def sample_search_result():
             "abstract": "We performed scRNAseq on glioblastoma tumors."
         },
         "metadata_quality": "good",
-        "date_submitted": "2025-05-01"
+        "date_submitted": "2025-05-01",
+        "sample_table": {
+            "total_samples": 12,
+            "shown_samples": 12,
+            "capped": False,
+            "columns": ["sample_id", "tissue_site", "sample_type", "treatment_status", "disease", "cell_type", "age", "sex", "stage", "platform_id"],
+            "rows": [
+                ["GSM000001", "brain", "primary", "untreated", "glioblastoma", "N/A", "55", "M", "IV", "GPL24676"],
+            ],
+            "summary": {"sample_type": {"primary": 1}, "treatment_status": {"untreated": 1}},
+        }
     }
 
 
@@ -58,4 +68,8 @@ SEARCH_RESULT_REQUIRED_KEYS = {
 
 PAPER_REQUIRED_KEYS = {
     "title", "authors", "journal", "doi", "date", "abstract"
+}
+
+SAMPLE_TABLE_KEYS = {
+    "total_samples", "shown_samples", "capped", "columns", "rows", "summary"
 }

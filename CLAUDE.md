@@ -42,6 +42,8 @@ dataseek/
 │   ├── search_xena.py                # Xena UCSC search
 │   ├── search_depmap.py              # DepMap search
 │   ├── search_scp.py                 # Single Cell Portal search
+│   ├── sample_utils.py               # Sample metadata: schema, normalization, CSV, summaries
+│   ├── supplement_fetch.py           # PMC supplementary table extraction
 │   ├── download_geo.py               # GEO downloader
 │   ├── download_ccle.py              # CCLE downloader
 │   ├── download_xena.py              # Xena downloader
@@ -49,7 +51,7 @@ dataseek/
 │   └── download_scp.py              # SCP downloader
 ├── tests/                            # pytest test suite
 ├── results/
-│   ├── search_cache/                 # Cached search results (JSON)
+│   ├── search_cache/                 # Cached search results (JSON) + per-dataset sample CSVs
 │   └── reports/                      # Per-dataset summary reports (.md)
 └── downloads/                        # Downloaded datasets
     └── {accession}/
@@ -106,7 +108,15 @@ All search scripts output JSON arrays of this schema to stdout:
   "data_files": [{"type": "count_matrix", "format": "h5", "size_mb": 450}],
   "paper": {"title": "...", "authors": "...", "journal": "...", "doi": "...", "date": "...", "abstract": "..."},
   "metadata_quality": "good|partial|minimal",
-  "date_submitted": "2025-05-01"
+  "date_submitted": "2025-05-01",
+  "sample_table": {
+    "total_samples": 12,
+    "shown_samples": 12,
+    "capped": false,
+    "columns": ["sample_id", "tissue_site", "sample_type", "treatment_status", "disease", "cell_type", "age", "sex", "stage"],
+    "rows": [["GSM123456", "brain", "primary", "untreated", "glioblastoma", "N/A", "45", "M", "IV"]],
+    "summary": {"sample_type": {"primary": 8, "normal": 4}, "treatment_status": {"treated": 3, "untreated": 9}}
+  }
 }
 ```
 
