@@ -100,11 +100,9 @@ def fetch_pmc_supplement_list(pmcid: str) -> list[dict]:
             if not href:
                 continue
             filename = href.split("/")[-1]
-            ext = os.path.splitext(filename)[1].lower()
-            if ext in TABULAR_EXTENSIONS:
-                supplements.append({"url": href, "filename": filename})
-                if len(supplements) >= MAX_SUPPLEMENT_FILES:
-                    break
+            supplements.append({"url": href, "filename": filename})
+            if len(supplements) >= MAX_SUPPLEMENT_FILES:
+                break
         return supplements
     except Exception as exc:
         logger.warning("fetch_pmc_supplement_list failed for %s: %s", pmcid, exc)
@@ -236,7 +234,7 @@ def fetch_supplementary_tables(
 
         # Download to a temp file
         try:
-            resp = requests.get(url, timeout=30)
+            resp = fetch_with_retry(url, timeout=15)
             resp.raise_for_status()
             size_mb = len(resp.content) / (1024 * 1024)
             if size_mb > MAX_FILE_SIZE_MB:
