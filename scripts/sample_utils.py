@@ -38,20 +38,28 @@ SAMPLE_CAP = 500
 def _build_summary_dict(normalized: list[dict]) -> dict:
     """Build summary counts from sample_type and treatment_status fields.
 
-    Returns a flat dict with counts for each non-N/A value found in those two
-    fields.  Empty input returns an empty dict.
+    Returns a dict with two keys:
+        ``{"sample_type": {value: count, ...}, "treatment_status": {value: count, ...}}``
+
+    N/A values are excluded from counts.  Empty input returns the two-key
+    structure with empty inner dicts.
     """
-    if not normalized:
-        return {}
+    sample_type_counts: dict[str, int] = {}
+    treatment_status_counts: dict[str, int] = {}
 
-    counts: dict[str, int] = {}
     for row in normalized:
-        for field in ("sample_type", "treatment_status"):
-            val = row.get(field, "N/A")
-            if val and val != "N/A":
-                counts[val] = counts.get(val, 0) + 1
+        st = row.get("sample_type", "N/A")
+        if st and st != "N/A":
+            sample_type_counts[st] = sample_type_counts.get(st, 0) + 1
 
-    return counts
+        ts = row.get("treatment_status", "N/A")
+        if ts and ts != "N/A":
+            treatment_status_counts[ts] = treatment_status_counts.get(ts, 0) + 1
+
+    return {
+        "sample_type": sample_type_counts,
+        "treatment_status": treatment_status_counts,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +114,7 @@ def write_sample_csv(accession: str, table_data: dict, output_dir: str) -> str:
             writer.writerow(row)
         if capped:
             hidden = total_samples - shown_samples
-            f.write(f"# {hidden} additional samples not shown\n")
+            f.write(f"\n# {hidden} additional samples not shown\n")
 
     return filepath
 
@@ -125,17 +133,11 @@ def summarize_samples(table_data: dict) -> str:
     shown = table_data.get("shown_samples", 0)
     summary_dict = table_data.get("summary", {})
 
-    # Separate sample_type values from treatment_status values.
-    # We infer sample_type values as keys that are not treatment-related.
-    treatment_keywords = {"treated", "untreated", "naive", "post-treatment", "treatment-naive"}
+    sample_type_counts = summary_dict.get("sample_type", {})
+    treatment_status_counts = summary_dict.get("treatment_status", {})
 
-    type_parts = []
-    treatment_parts = []
-    for key, count in summary_dict.items():
-        if key.lower() in treatment_keywords:
-            treatment_parts.append(f"{key}: {count}")
-        else:
-            type_parts.append(f"{count} {key}")
+    type_parts = [f"{count} {key}" for key, count in sample_type_counts.items()]
+    treatment_parts = [f"{key}: {count}" for key, count in treatment_status_counts.items()]
 
     type_str = ", ".join(type_parts) if type_parts else "N/A"
     treatment_str = ", ".join(treatment_parts) if treatment_parts else "N/A"

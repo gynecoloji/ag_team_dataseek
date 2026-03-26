@@ -137,7 +137,7 @@ class TestWriteSampleCsv:
             "capped": capped,
             "columns": cols,
             "rows": csv_rows,
-            "summary": {"primary": n, "normal": 0},
+            "summary": {"sample_type": {"primary": n}, "treatment_status": {}},
         }
 
     def test_writes_csv_file(self, tmp_path):
@@ -346,8 +346,8 @@ class TestBuildSummaryDict:
             {"sample_type": "normal", "treatment_status": "untreated"},
         ]
         result = _build_summary_dict(rows)
-        assert result.get("primary") == 2
-        assert result.get("normal") == 1
+        assert result["sample_type"].get("primary") == 2
+        assert result["sample_type"].get("normal") == 1
 
     def test_counts_treatment_status(self):
         rows = [
@@ -356,8 +356,8 @@ class TestBuildSummaryDict:
             {"sample_type": "primary", "treatment_status": "untreated"},
         ]
         result = _build_summary_dict(rows)
-        assert result.get("treated") == 1
-        assert result.get("untreated") == 2
+        assert result["treatment_status"].get("treated") == 1
+        assert result["treatment_status"].get("untreated") == 2
 
     def test_ignores_na_values(self):
         rows = [
@@ -365,8 +365,16 @@ class TestBuildSummaryDict:
             {"sample_type": "primary", "treatment_status": "untreated"},
         ]
         result = _build_summary_dict(rows)
-        assert "N/A" not in result
+        assert "N/A" not in result["sample_type"]
+        assert "N/A" not in result["treatment_status"]
 
-    def test_empty_rows_returns_empty_dict(self):
+    def test_empty_rows_returns_two_key_dict(self):
         result = _build_summary_dict([])
-        assert result == {}
+        assert result == {"sample_type": {}, "treatment_status": {}}
+
+    def test_returns_two_key_structure(self):
+        rows = [{"sample_type": "primary", "treatment_status": "untreated"}]
+        result = _build_summary_dict(rows)
+        assert set(result.keys()) == {"sample_type", "treatment_status"}
+        assert isinstance(result["sample_type"], dict)
+        assert isinstance(result["treatment_status"], dict)
