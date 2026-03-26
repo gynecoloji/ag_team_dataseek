@@ -4,7 +4,13 @@ import xml.etree.ElementTree as ET
 import pytest
 import responses
 
-from scripts.search_geo import search_geo, parse_geo_record, build_esearch_query
+from scripts.search_geo import (
+    search_geo,
+    parse_geo_record,
+    build_esearch_query,
+    parse_soft_samples,
+    fetch_geo_samples,
+)
 from tests.conftest import SEARCH_RESULT_REQUIRED_KEYS, PAPER_REQUIRED_KEYS
 
 
@@ -66,15 +72,119 @@ class TestParseGeoRecord:
             assert key in result
 
 
+SAMPLE_SOFT_RESPONSE = """\
+^SAMPLE = GSM000001
+!Sample_characteristics_ch1 = tissue: brain
+!Sample_characteristics_ch1 = disease state: glioblastoma
+!Sample_characteristics_ch1 = tumor type: primary
+!Sample_characteristics_ch1 = treatment: untreated
+!Sample_characteristics_ch1 = age: 55
+!Sample_characteristics_ch1 = Sex: Male
+!Sample_characteristics_ch1 = stage: IV
+!Sample_platform_id = GPL24676
+
+^SAMPLE = GSM000002
+!Sample_characteristics_ch1 = tissue: spine
+!Sample_characteristics_ch1 = disease state: glioblastoma
+!Sample_characteristics_ch1 = tumor type: metastasis
+!Sample_characteristics_ch1 = treatment: cisplatin
+!Sample_characteristics_ch1 = age: 42
+!Sample_characteristics_ch1 = Sex: Female
+!Sample_characteristics_ch1 = stage: IV
+!Sample_platform_id = GPL24676
+
+^SAMPLE = GSM000003
+!Sample_characteristics_ch1 = tissue: brain
+!Sample_characteristics_ch1 = disease state: normal
+!Sample_characteristics_ch1 = cell type: astrocyte
+!Sample_characteristics_ch1 = treatment: untreated
+!Sample_characteristics_ch1 = age: 60
+!Sample_characteristics_ch1 = Sex: Male
+!Sample_platform_id = GPL24676
+"""
+
+
+class TestParseSoftSamples:
+    def test_parses_sample_characteristics(self):
+        rows = parse_soft_samples(SAMPLE_SOFT_RESPONSE)
+        gsm1 = next(r for r in rows if r["sample_id"] == "GSM000001")
+        assert gsm1["tissue_site"] == "brain"
+        assert gsm1["disease"] == "glioblastoma"
+        assert gsm1["sample_type"] == "primary"
+        assert gsm1["treatment_status"] == "untreated"
+        assert gsm1["age"] == "55"
+        assert gsm1["sex"] == "Male"
+        assert gsm1["stage"] == "IV"
+        assert gsm1["platform_id"] == "GPL24676"
+
+    def test_maps_metastasis_sample(self):
+        rows = parse_soft_samples(SAMPLE_SOFT_RESPONSE)
+        gsm2 = next(r for r in rows if r["sample_id"] == "GSM000002")
+        assert gsm2["tissue_site"] == "spine"
+        assert gsm2["disease"] == "glioblastoma"
+        assert gsm2["sample_type"] == "metastasis"
+        assert gsm2["treatment_status"] == "cisplatin"
+        assert gsm2["age"] == "42"
+        assert gsm2["sex"] == "Female"
+        assert gsm2["stage"] == "IV"
+        assert gsm2["platform_id"] == "GPL24676"
+
+    def test_maps_cell_type(self):
+        rows = parse_soft_samples(SAMPLE_SOFT_RESPONSE)
+        gsm3 = next(r for r in rows if r["sample_id"] == "GSM000003")
+        assert gsm3["cell_type"] == "astrocyte"
+        assert gsm3["tissue_site"] == "brain"
+
+    def test_caps_at_500_samples(self):
+        lines = []
+        for i in range(600):
+            lines.append(f"^SAMPLE = GSM{i:06d}")
+            lines.append(f"!Sample_characteristics_ch1 = tissue: brain")
+            lines.append(f"!Sample_platform_id = GPL24676")
+            lines.append("")
+        soft_text = "\n".join(lines)
+        rows = parse_soft_samples(soft_text)
+        assert len(rows) == 500
+
+
+class TestFetchGeoSamples:
+    @responses.activate
+    def test_returns_sample_table_dict(self):
+        responses.add(
+            responses.GET,
+            "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi",
+            body=SAMPLE_SOFT_RESPONSE,
+            status=200,
+        )
+        result = fetch_geo_samples("GSE000001")
+        assert result is not None
+        assert "rows" in result
+        assert "columns" in result
+        assert "total_samples" in result
+        assert result["total_samples"] == 3
+
+    @responses.activate
+    def test_returns_none_on_http_error(self):
+        responses.add(
+            responses.GET,
+            "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi",
+            body=Exception("connection error"),
+        )
+        result = fetch_geo_samples("GSE_BAD")
+        assert result is None
+
+
 class TestSearchGeo:
     @responses.activate
     def test_returns_list_of_search_results(self):
         responses.add(responses.GET, "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi", body=SAMPLE_GEO_ESEARCH_RESPONSE, status=200)
         responses.add(responses.GET, "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi", body=SAMPLE_GEO_ESUMMARY_RESPONSE, status=200)
+        responses.add(responses.GET, "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi", body=SAMPLE_SOFT_RESPONSE, status=200)
         results = search_geo(omic="scRNAseq", organism="human", disease="glioblastoma", max_results=10)
         assert isinstance(results, list)
         assert len(results) >= 1
         assert results[0]["accession"] == "GSE123456"
+        assert "sample_table" in results[0]
 
     @responses.activate
     def test_returns_empty_on_no_results(self):

@@ -8,9 +8,23 @@ import sys
 import xml.etree.ElementTree as ET
 
 from scripts.utils import fetch_with_retry, resolve_doi, setup_logger
+from scripts.sample_utils import build_sample_table, SAMPLE_CAP
+from scripts.supplement_fetch import fetch_supplementary_tables
 
 ESEARCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
 ESUMMARY_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+GEO_SOFT_URL = "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi"
+
+CHARACTERISTIC_KEY_MAP = {
+    "tissue_site": ["tissue", "organ", "body site", "anatomic site"],
+    "sample_type": ["tumor type", "sample type", "primary", "metastasis", "metastatic"],
+    "treatment_status": ["treatment", "therapy", "chemo", "drug"],
+    "disease": ["disease", "diagnosis", "pathology", "histology", "disease state"],
+    "cell_type": ["cell type", "cell line", "sorted population"],
+    "age": ["age"],
+    "sex": ["sex", "gender"],
+    "stage": ["stage", "grade", "tnm"],
+}
 
 OMIC_TO_GEO_TERMS = {
     "scRNAseq": '("single cell" OR "scRNA" OR "10x" OR "Smart-seq") AND "Expression profiling by high throughput sequencing"[Filter]',
@@ -108,6 +122,110 @@ def parse_geo_record(doc, omic):
     }
 
 
+def _map_characteristic(key: str, value: str):
+    """Map a SOFT characteristic key/value to a (schema_column, value) tuple, or None.
+
+    Matching strategy: first try exact equality against each keyword, then fall
+    back to substring containment.  The two-pass approach prevents shorter
+    keywords (e.g. "age") from shadowing longer ones (e.g. "stage") when the
+    short keyword happens to be a substring of the key.
+    """
+    key_lower = key.lower().strip()
+
+    # Pass 1: exact match
+    for schema_col, keywords in CHARACTERISTIC_KEY_MAP.items():
+        for kw in keywords:
+            if key_lower == kw:
+                return (schema_col, value.strip())
+
+    # Pass 2: substring containment
+    for schema_col, keywords in CHARACTERISTIC_KEY_MAP.items():
+        for kw in keywords:
+            if kw in key_lower:
+                return (schema_col, value.strip())
+
+    return None
+
+
+def parse_soft_samples(soft_text: str) -> list[dict]:
+    """Parse GEO SOFT format text into sample metadata rows.
+
+    Splits on ``^SAMPLE`` blocks, extracts ``!Sample_characteristics_ch1``
+    key:value pairs (mapped via CHARACTERISTIC_KEY_MAP), and
+    ``!Sample_platform_id``. Caps at SAMPLE_CAP.
+    """
+    rows = []
+    current: dict | None = None
+
+    for line in soft_text.splitlines():
+        line = line.rstrip()
+        if line.startswith("^SAMPLE"):
+            if current is not None:
+                rows.append(current)
+                if len(rows) >= SAMPLE_CAP:
+                    break
+            # Start new sample block
+            parts = line.split("=", 1)
+            sample_id = parts[1].strip() if len(parts) == 2 else ""
+            current = {"sample_id": sample_id}
+        elif current is not None:
+            if line.startswith("!Sample_characteristics_ch1"):
+                # Format: !Sample_characteristics_ch1 = key: value
+                rest = line.split("=", 1)[1].strip() if "=" in line else ""
+                if ":" in rest:
+                    char_key, char_val = rest.split(":", 1)
+                    mapped = _map_characteristic(char_key, char_val)
+                    if mapped is not None:
+                        schema_col, val = mapped
+                        if schema_col not in current:
+                            current[schema_col] = val
+            elif line.startswith("!Sample_platform_id"):
+                rest = line.split("=", 1)[1].strip() if "=" in line else ""
+                current["platform_id"] = rest
+
+    # Append last block if within cap
+    if current is not None and len(rows) < SAMPLE_CAP:
+        rows.append(current)
+
+    return rows
+
+
+def fetch_geo_samples(accession: str, paper: dict | None = None) -> dict | None:
+    """Fetch SOFT for *accession*, parse samples, optionally enrich from supplementary tables.
+
+    Returns a build_sample_table dict (source="GEO") or None on failure.
+    """
+    try:
+        params = {"acc": accession, "form": "text", "view": "brief"}
+        resp = fetch_with_retry(GEO_SOFT_URL, params=params)
+        rows = parse_soft_samples(resp.text)
+    except Exception as exc:
+        logger.warning("fetch_geo_samples failed for %s: %s", accession, exc)
+        return None
+
+    # Attempt supplementary enrichment when paper metadata is available
+    if paper and (paper.get("pubmed_id") or paper.get("doi")):
+        sample_ids = [r["sample_id"] for r in rows if r.get("sample_id")]
+        try:
+            enriched = fetch_supplementary_tables(
+                doi=paper.get("doi") or None,
+                pmid=paper.get("pubmed_id") or None,
+                sample_ids=sample_ids or None,
+            )
+            if enriched:
+                id_to_row = {r["sample_id"]: r for r in rows}
+                for enr in enriched:
+                    sid = enr.get("sample_id")
+                    if sid and sid in id_to_row:
+                        for k, v in enr.items():
+                            if k != "sample_id" and k not in id_to_row[sid]:
+                                id_to_row[sid][k] = v
+        except Exception as exc:
+            logger.warning("Supplementary enrichment failed for %s: %s", accession, exc)
+
+    return build_sample_table(rows, source="GEO")
+
+
 def search_geo(omic, organism="human", disease=None, tissue=None, max_results=50, date_from=None, date_to=None):
     query = build_esearch_query(omic, organism, disease, tissue, date_from, date_to)
     logger.info(f"GEO query: {query}")
@@ -129,7 +247,10 @@ def search_geo(omic, organism="human", disease=None, tissue=None, max_results=50
     for doc in root.findall("DocSum"):
         accession = _get_item_text(doc, "Accession")
         if accession and accession.startswith("GSE"):
-            results.append(parse_geo_record(doc, omic))
+            record = parse_geo_record(doc, omic)
+            sample_table = fetch_geo_samples(accession, paper=record.get("paper"))
+            record["sample_table"] = sample_table
+            results.append(record)
     logger.info(f"Parsed {len(results)} GEO series records")
     return results
 
