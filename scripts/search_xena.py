@@ -11,11 +11,23 @@ except ImportError:
     xena = None
 
 from scripts.utils import fetch_with_retry, setup_logger
+from scripts.sample_utils import build_sample_table, SAMPLE_CAP
+from scripts.supplement_fetch import fetch_supplementary_tables
 
 XENA_HUB_URL = "https://ucscpublic.xenahubs.net"
 TCGA_HUB_URL = "https://tcga.xenahubs.net"
 TOIL_HUB_URL = "https://toil.xenahubs.net"
 ALL_HUBS = [TCGA_HUB_URL, XENA_HUB_URL, TOIL_HUB_URL]
+
+TCGA_SAMPLE_TYPE_MAP = {
+    "primary tumor": "primary",
+    "primary solid tumor": "primary",
+    "recurrent tumor": "primary",
+    "recurrent solid tumor": "primary",
+    "metastatic": "metastasis",
+    "solid tissue normal": "normal",
+    "blood derived normal": "normal",
+}
 
 OMIC_TO_XENA_SUBTYPES = {
     "bulkRNAseq": ["gene expression rnaseq", "gene expression", "rnaseq"],
@@ -61,6 +73,66 @@ def parse_xena_dataset(ds, omic):
     }
 
 
+def parse_xena_phenotypes(phenotype_data: list[dict], cohort: str = "") -> list[dict]:
+    """Parse Xena phenotype data into sample rows.
+
+    Args:
+        phenotype_data: List of phenotype dicts from Xena dataset_phenotypes.
+        cohort: Cohort name to attach as extra column.
+
+    Returns:
+        List of sample row dicts (capped at SAMPLE_CAP).
+    """
+    rows = []
+    for entry in phenotype_data[:SAMPLE_CAP]:
+        sample_id = entry.get("sampleID", "")
+        disease = entry.get("_primary_disease", "")
+        raw_sample_type = entry.get("sample_type", "")
+        mapped_sample_type = TCGA_SAMPLE_TYPE_MAP.get(raw_sample_type.lower(), "")
+        age = entry.get("age_at_initial_pathologic_diagnosis", "")
+        sex = entry.get("gender", entry.get("sex", ""))
+        stage = entry.get("pathologic_stage", entry.get("stage", ""))
+        primary_site = entry.get("primary_site", "")
+        rows.append({
+            "sample_id": sample_id,
+            "disease": disease,
+            "sample_type": mapped_sample_type,
+            "age": age,
+            "sex": sex,
+            "stage": stage,
+            "tissue_site": primary_site,
+            "cohort_name": cohort,
+        })
+    return rows
+
+
+def fetch_xena_samples(hub: str, dataset_name: str, cohort: str = "", paper: dict | None = None) -> dict | None:
+    """Fetch sample phenotype data from a Xena dataset.
+
+    Args:
+        hub: Xena hub URL.
+        dataset_name: Dataset identifier on the hub.
+        cohort: Cohort name for annotation.
+        paper: Optional paper dict (unused, for API compatibility).
+
+    Returns:
+        Sample table dict from build_sample_table, or None on failure.
+    """
+    if xena is None:
+        return None
+    try:
+        phenotype_data = xena.dataset_phenotypes(hub, dataset_name)
+        if not phenotype_data:
+            return None
+        rows = parse_xena_phenotypes(phenotype_data, cohort=cohort)
+        if not rows:
+            return None
+        return build_sample_table(rows, source="Xena")
+    except Exception as e:
+        logger.warning(f"fetch_xena_samples failed for {dataset_name} on {hub}: {e}")
+        return None
+
+
 def search_xena(omic, organism="human", disease=None, tissue=None, max_results=50):
     if xena is None:
         logger.warning("xenaPython not installed, falling back to API")
@@ -76,7 +148,13 @@ def search_xena(omic, organism="human", disease=None, tissue=None, max_results=5
                 ds["host"] = hub
                 if disease and disease.lower() not in ds.get("cohort", "").lower():
                     continue
-                results.append(parse_xena_dataset(ds, omic))
+                result = parse_xena_dataset(ds, omic)
+                dataset_name = ds.get("name", "")
+                cohort = ds.get("cohort", "")
+                sample_table = fetch_xena_samples(hub, dataset_name, cohort=cohort)
+                if sample_table is not None:
+                    result["sample_table"] = sample_table
+                results.append(result)
         except Exception as e:
             logger.warning(f"Failed to query Xena hub {hub}: {e}")
     logger.info(f"Found {len(results)} Xena datasets")
