@@ -6,6 +6,7 @@ import json
 import os
 import sys
 
+from scripts.sample_utils import build_sample_table
 from scripts.utils import fetch_with_retry, setup_logger
 
 SCP_API_BASE = "https://singlecell.broadinstitute.org/single_cell/api/v1"
@@ -37,6 +38,50 @@ def parse_scp_study(study, omic):
     }
 
 
+def fetch_scp_samples(accession: str) -> dict | None:
+    """Fetch study-level metadata from SCP API and return a sample table.
+
+    Args:
+        accession: SCP study accession (e.g. "SCP1234").
+
+    Returns:
+        Sample table dict from build_sample_table, or None on HTTP error/exception.
+    """
+    token = os.environ.get("SCP_TOKEN", "")
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        resp = fetch_with_retry(f"{SCP_API_BASE}/studies/{accession}", headers=headers)
+        if resp.status_code != 200:
+            logger.warning(f"SCP studies API returned status {resp.status_code} for {accession}")
+            return None
+        study = resp.json()
+    except Exception as exc:
+        logger.warning(f"Failed to fetch SCP study detail for {accession}: {exc}")
+        return None
+
+    organs = study.get("organ", [])
+    diseases = study.get("disease", [])
+    protocols = study.get("library_preparation_protocol", [])
+    cell_count = study.get("cell_count")
+
+    rows = [{
+        "sample_id": accession,
+        "tissue_site": ", ".join(organs) if organs else "N/A",
+        "sample_type": "N/A",
+        "treatment_status": "N/A",
+        "disease": ", ".join(diseases) if diseases else "N/A",
+        "cell_type": "N/A",
+        "age": "N/A",
+        "sex": "N/A",
+        "stage": "N/A",
+        "cell_count": str(cell_count) if cell_count else "N/A",
+        "library_prep": ", ".join(protocols) if protocols else "N/A",
+    }]
+    return build_sample_table(rows, source="SCP")
+
+
 def search_scp(omic, organism="human", disease=None, tissue=None, max_results=50):
     token = os.environ.get("SCP_TOKEN", "")
     headers = {}
@@ -60,7 +105,11 @@ def search_scp(omic, organism="human", disease=None, tissue=None, max_results=50
     studies = data.get("studies", [])
     results = []
     for study in studies:
-        results.append(parse_scp_study(study, omic))
+        record = parse_scp_study(study, omic)
+        accession = record.get("accession", "")
+        if accession:
+            record["sample_table"] = fetch_scp_samples(accession)
+        results.append(record)
     logger.info(f"Found {len(results)} SCP studies")
     return results
 
