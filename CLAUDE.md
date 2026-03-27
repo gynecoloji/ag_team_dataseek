@@ -34,7 +34,8 @@ dataseek/
 ├── environment.yml                   # Conda env definition
 ├── .claude/skills/
 │   ├── dataseek-search/SKILL.md      # Search orchestration skill
-│   └── dataseek-download/SKILL.md    # Download orchestration skill
+│   ├── dataseek-download/SKILL.md    # Download orchestration skill
+│   └── dataseek-sample-mine/SKILL.md  # Publication sample mining skill
 ├── scripts/
 │   ├── utils.py                      # Shared: HTTP retry, DOI resolver, caching, downloads
 │   ├── search_geo.py                 # GEO Entrez search
@@ -52,7 +53,8 @@ dataseek/
 ├── tests/                            # pytest test suite
 ├── results/
 │   ├── search_cache/                 # Cached search results (JSON) + per-dataset sample CSVs
-│   └── reports/                      # Per-dataset summary reports (.md)
+│   ├── reports/                      # Per-dataset summary reports (.md)
+│   └── sample_mining/              # Extracted sample CSVs and reports
 └── downloads/                        # Downloaded datasets
     └── {accession}/
         ├── data/                     # Data files (original format)
@@ -71,6 +73,7 @@ dataseek/
 | dataseek-depmap | Search DepMap | Dispatched by coordinator | omic, disease | SearchResult[] JSON | `search_depmap.py` |
 | dataseek-scp | Search Single Cell Portal | Dispatched by coordinator | omic, organism, disease, tissue | SearchResult[] JSON | `search_scp.py` |
 | dataseek-download | Download datasets + generate configs | `/dataseek-download` invocation | Accession ID(s) | Downloaded files + reports | `download_{source}.py` |
+| dataseek-sample-mine | Extract sample metadata from publications | `/dataseek-sample-mine` invocation | Accession, DOI, or PMID | Sample CSV + extraction report | `supplement_fetch.py` + MCP tools |
 
 ## Source Routing
 
@@ -149,6 +152,16 @@ Parameters: `--omic` (required), `--disease`, `--organism` (default: human), `--
 ```
 
 Takes one or more accession IDs. Looks up source from cache or accession prefix.
+
+### `/dataseek-sample-mine`
+
+```
+/dataseek-sample-mine GSE123456
+/dataseek-sample-mine 10.1038/s41586-024-xxxx
+/dataseek-sample-mine PMID:38654321
+```
+
+Takes one identifier: accession ID (GSE/SCP), DOI, or PubMed ID. Extracts sample-level metadata from the linked publication and saves a CSV to `results/sample_mining/`.
 
 ## Pipeline Config Generation
 
