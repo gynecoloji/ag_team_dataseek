@@ -37,13 +37,29 @@ def fetch_with_retry(
     max_retries: int = 3,
     base_delay: float = 1.0,
     timeout: int = 30,
+    verify: bool | str = True,
 ) -> requests.Response:
     """GET request with exponential backoff retry on 5xx or connection errors."""
+    import urllib3
+    import warnings
     for attempt in range(max_retries):
         try:
-            resp = requests.get(url, params=params, headers=headers, timeout=timeout)
+            resp = requests.get(url, params=params, headers=headers, timeout=timeout, verify=verify)
             if resp.status_code < 500:
                 return resp
+        except requests.exceptions.SSLError:
+            # Retry once with SSL verification disabled on SSL errors
+            if attempt == 0:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", urllib3.exceptions.InsecureRequestWarning)
+                    try:
+                        resp = requests.get(url, params=params, headers=headers, timeout=timeout, verify=False)
+                        if resp.status_code < 500:
+                            return resp
+                    except requests.RequestException:
+                        pass
+            if attempt == max_retries - 1:
+                raise
         except requests.RequestException:
             if attempt == max_retries - 1:
                 raise
