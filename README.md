@@ -1,5 +1,7 @@
 # Dataseek
 
+![Dataseek Infographic](dataseek_infographic.svg)
+
 A multi-agent system for searching public omics repositories, presenting ranked results, and downloading datasets with metadata and pipeline-ready starter configs.
 
 ## What it does
